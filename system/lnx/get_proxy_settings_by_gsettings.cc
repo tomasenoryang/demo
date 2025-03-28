@@ -5,9 +5,9 @@
 #include <pwd.h>
 
 // 封装 popen 和 fgets 逻辑的通用函数
-std::string executeCommand(const std::string& command) {
+std::string ExecuteCommand(const std::string& command) {
     char buffer[128];
-    std::string result = "";
+    std::string result;
     FILE* fp = popen(command.c_str(), "r");
     if (fp == nullptr) {
         std::cerr << "Failed to execute command: " << command << std::endl;
@@ -28,10 +28,21 @@ std::string executeCommand(const std::string& command) {
     return result;
 }
 
-// 使用 executeCommand 获取 gsettings 字符串值，并去除单引号
-std::string getGSettingsString(const std::string& schema, const std::string& key, const std::string& user) {
+// 检查 gsettings 是否存在
+bool IsGSettingsAvailable() {
+    std::string check = ExecuteCommand("command -v gsettings");
+    return !check.empty();  // 若命令返回非空，说明 gsettings 存在
+}
+
+// 使用 ExecuteCommand 获取 gsettings 字符串值，并去除单引号
+std::string GetGSettingsString(const std::string& schema, const std::string& key, const std::string& user) {
+    if (!IsGSettingsAvailable()) {
+        std::cerr << "Error: gsettings command not found!" << std::endl;
+        return "";
+    }
+
     std::string command = "sudo -u " + user + " gsettings get " + schema + " " + key;
-    std::string result = executeCommand(command);
+    std::string result = ExecuteCommand(command);
 
     // 去掉开始和结束的单引号
     if (!result.empty() && result.front() == '\'' && result.back() == '\'') {
@@ -41,10 +52,15 @@ std::string getGSettingsString(const std::string& schema, const std::string& key
     return result;
 }
 
-// 使用 executeCommand 获取 gsettings 整数值
-int getGSettingsInt(const std::string& schema, const std::string& key, const std::string& user) {
+// 使用 ExecuteCommand 获取 gsettings 整数值
+int GetGSettingsInt(const std::string& schema, const std::string& key, const std::string& user) {
+    if (!IsGSettingsAvailable()) {
+        std::cerr << "Error: gsettings command not found!" << std::endl;
+        return -1; // 返回一个无效值
+    }
+
     std::string command = "sudo -u " + user + " gsettings get " + schema + " " + key;
-    std::string result = executeCommand(command);
+    std::string result = ExecuteCommand(command);
 
     if (result.empty()) {
         return -1; // 返回一个无效值
@@ -54,12 +70,18 @@ int getGSettingsInt(const std::string& schema, const std::string& key, const std
 }
 
 // 获取代理设置
-void getProxySettings(const std::string& user) {
-    std::string proxy_status = getGSettingsString("org.gnome.system.proxy", "mode", user);
-    std::string httpHost = getGSettingsString("org.gnome.system.proxy.http", "host", user);
-    int httpPort = getGSettingsInt("org.gnome.system.proxy.http", "port", user);
-    std::string httpsHost = getGSettingsString("org.gnome.system.proxy.https", "host", user);
-    int httpsPort = getGSettingsInt("org.gnome.system.proxy.https", "port", user);
+void GetProxySettings(const std::string& user) {
+/*
+    if (!IsGSettingsAvailable()) {
+        std::cerr << "Error: gsettings is not available on this system!" << std::endl;
+        return;
+    }
+*/
+    std::string proxy_status = GetGSettingsString("org.gnome.system.proxy", "mode", user);
+    std::string httpHost = GetGSettingsString("org.gnome.system.proxy.http", "host", user);
+    int httpPort = GetGSettingsInt("org.gnome.system.proxy.http", "port", user);
+    std::string httpsHost = GetGSettingsString("org.gnome.system.proxy.https", "host", user);
+    int httpsPort = GetGSettingsInt("org.gnome.system.proxy.https", "port", user);
 
     std::cout << "Proxy Status: " << proxy_status << std::endl;
     std::cout << "HTTP Proxy Host: " << httpHost << std::endl;
@@ -68,24 +90,28 @@ void getProxySettings(const std::string& user) {
     std::cout << "HTTPS Proxy Port: " << httpsPort << std::endl;
 }
 
+// 使用 ExecuteCommand 获取当前登录用户名
+std::string GetUsername() {
+    return ExecuteCommand("w -h | awk '{print $1}' | head -n 1");
+}
+
 int main() {
+    std::cout << "User: " << GetUsername() << std::endl;
+
     const char* sudo_user = std::getenv("SUDO_USER");
     if (!sudo_user) {
         std::cerr << "未找到 SUDO_USER 环境变量，请使用 sudo 运行程序" << std::endl;
         return 1;
     }
-
-    // 通过 sudo 用户获取设置
-    getProxySettings(sudo_user);
-
-    int i = 0;
-    while (true) {
-        std::cout << "========" << i << "========" << std::endl;
-        getProxySettings("yangsen");
-        sleep(1);
-        i++;
+/*
+    // 检查 gsettings 是否可用
+    if (!IsGSettingsAvailable()) {
+        std::cerr << "gsettings is not installed on this system. Exiting." << std::endl;
+        return 1;
     }
+*/
+    // 通过 sudo 用户获取设置
+    GetProxySettings(sudo_user);
 
     return 0;
 }
-// g++ get_proxy_settings_by_gsettings.cc -o get_proxy_settings_by_gsettings
