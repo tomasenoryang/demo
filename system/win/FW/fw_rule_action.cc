@@ -6,6 +6,7 @@
 #include <vector>
 #include <optional>
 #include <cstdlib>
+#include <Ntstatus.h>
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "oleaut32.lib")
 #pragma comment(lib, "comsuppw.lib")
@@ -183,6 +184,43 @@ int32_t RemoveFWRule(const std::wstring& ruleName) {
   return S_OK;
 }
 
+bool IsFirewallEnabled() {
+  HRESULT hr;
+  INetFwPolicy2* pNetFwPolicy2 = nullptr;
+
+  hr = CoInitializeEx(0, COINIT_APARTMENTTHREADED);
+  if (FAILED(hr)) return false;
+
+  hr = CoCreateInstance(
+    __uuidof(NetFwPolicy2),
+    nullptr,
+    CLSCTX_INPROC_SERVER,
+    __uuidof(INetFwPolicy2),
+    (void**)&pNetFwPolicy2
+  );
+
+  bool enabled = false;
+  if (SUCCEEDED(hr) && pNetFwPolicy2) {
+    VARIANT_BOOL fwEnabled;
+    hr = pNetFwPolicy2->get_FirewallEnabled(NET_FW_PROFILE2_DOMAIN, &fwEnabled);
+    if (SUCCEEDED(hr) && fwEnabled == VARIANT_TRUE)
+      enabled = true;
+
+    hr = pNetFwPolicy2->get_FirewallEnabled(NET_FW_PROFILE2_PRIVATE, &fwEnabled);
+    if (SUCCEEDED(hr) && fwEnabled == VARIANT_TRUE)
+      enabled = true;
+
+    hr = pNetFwPolicy2->get_FirewallEnabled(NET_FW_PROFILE2_PUBLIC, &fwEnabled);
+    if (SUCCEEDED(hr) && fwEnabled == VARIANT_TRUE)
+      enabled = true;
+
+    pNetFwPolicy2->Release();
+  }
+
+  CoUninitialize();
+  return enabled;
+}
+
 std::optional<std::wstring> GetArgValue(const std::vector<std::wstring>& args, const std::wstring& argName) {
   auto it = std::find(args.begin(), args.end(), argName);
   if (it != args.end() && ++it != args.end()) {
@@ -192,7 +230,7 @@ std::optional<std::wstring> GetArgValue(const std::vector<std::wstring>& args, c
 }
 
 void PrintHelp() {
-  std::wcout << L"Usage: FW_WIN32.exe <add|remove> [options]\n"
+  std::wcout << L"Usage: FW_WIN32.exe <add|remove|check> [options]\n"
     << L"Options:\n"
     << L"  --name <name>               Name of the firewall rule\n"
     << L"  --description <description> Description of the firewall rule\n"
@@ -205,7 +243,8 @@ void PrintHelp() {
     << L"  -h, --help                  Show this help message\n"
     << L"\nExamples:\n"
     << L"  FW_WIN32.exe remove --name \"Sample Rule\"\n"
-    << L"  FW_WIN32.exe add --name \"Sample Rule\" --description \"Allow inbound traffic on port 12345\" --protocol 6 --localPorts \"12345\" --direction 1 --action 1 --enabled -1 --applicationName \"C:\\Path\\To\\YourApplication.exe\"\n";
+    << L"  FW_WIN32.exe add --name \"Sample Rule\" --description \"Allow inbound traffic on port 12345\" --protocol 6 --localPorts \"12345\" --direction 1 --action 1 --enabled -1 --applicationName \"C:\\Path\\To\\YourApplication.exe\"\n"
+    << L"  FW_WIN32.exe check\n";
 }
 
 int wmain(int argc, wchar_t* argv[]) {
@@ -264,6 +303,14 @@ int wmain(int argc, wchar_t* argv[]) {
       std::cout << "Firewall rule removed successfully." << std::endl;
     }
   }
+  else if (command == L"check") {
+    if (IsFirewallEnabled()) {
+      std::wcout << L"Firewall is enabled." << std::endl;
+    }
+    else {
+      std::wcout << L"Firewall is disabled." << std::endl;
+    }
+  }
   else {
     std::wcerr << L"Unknown command: " << command << std::endl;
     PrintHelp();
@@ -272,3 +319,4 @@ int wmain(int argc, wchar_t* argv[]) {
 
   return 0;
 }
+
